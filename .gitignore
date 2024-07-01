@@ -1,0 +1,10 @@
+*.ini
+*.env
+.DS_Store
+*.json
+__pycache__
+example/security/main.py
+shortener.db
+/tools/hybrid-analysis
+tools/infobip_sms.py
+tools/twilio_sms.py

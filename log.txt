@@ -1,0 +1,12 @@
+Securing Flask Applications: Best Practices and Techniques
+https://clouddevs.com/flask/best-practices-and-techniques/
+
+Best Practices For Flask Security 
+https://www.securecoding.com/blog/flask-security-best-practices/
+
+The Best Security Practice of your Flask Application/API
+https://python.plainenglish.io/the-best-security-practice-of-your-flask-application-api-691a21e37c27
+
+How To Secure Flask Applications: Essential Strategies And Best Practices 
+https://marketsplash.com/tutorials/flask/how-to-secure-flask-applications/
+
