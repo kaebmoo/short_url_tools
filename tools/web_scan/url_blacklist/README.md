@@ -102,3 +102,110 @@ URL Blacklist Manager/
 
 ## License
 
+
+# URL Blacklist Manager
+
+URL Blacklist Manager is a Flask-based web application for managing blocked URLs. Users can add, remove, and search for blocked URLs. Additionally, it supports importing and exporting URL data.
+
+## Features
+
+- Add URLs to be blocked
+- Remove blocked URLs
+- Search for blocked URLs
+- Export URL data as CSV and JSON
+- Import URL data from CSV and JSON files
+- Real-time import/export status updates
+
+## Installation
+
+### Prerequisites
+
+- Python 3.x
+- Flask
+- Flask-SQLAlchemy
+- Flask-Login
+- Flask-WTF
+- Flask-SocketIO
+
+### Installation Steps
+
+1. Create a Virtual Environment
+    ```bash
+    python3 -m venv venv
+    ```
+
+2. Activate the Virtual Environment
+    ```bash
+    # On macOS/Linux
+    source venv/bin/activate
+    # On Windows
+    venv\Scripts\activate
+    ```
+
+3. Install the required packages
+    ```bash
+    pip install Flask Flask-SQLAlchemy Flask-Login Flask-WTF Flask-SocketIO
+    ```
+
+4. Run the application
+    ```bash
+    python app.py
+    ```
+
+5. Open your web browser and navigate to [http://127.0.0.1:5001](http://127.0.0.1:5001)
+
+## Project Structure
+
+```
+URL Blacklist Manager/
+│
+├── app.py               # Main application file
+├── blacklist.db         # SQLite database
+├── templates/           # Folder for HTML Templates
+│   ├── index.html
+│   └── login.html
+└── static/              # Folder for static files like CSS and JS
+```
+
+## Usage
+
+### Adding URLs
+
+1. Navigate to the home page
+2. Enter the URL to be blocked, category, and reason
+3. Click the "Add URL" button
+
+### Removing URLs
+
+1. Navigate to the home page
+2. Click the "Remove" button next to the URL you want to remove
+
+### Searching URLs
+
+1. Navigate to the home page
+2. Enter the search term in the search box
+3. Click the "Search" button
+
+### Exporting Data
+
+1. Navigate to the home page
+2. Click the "Export CSV" or "Export JSON" button
+
+### Importing Data
+
+1. Navigate to the home page
+2. Select the CSV or JSON file to import
+3. Click the "Import" button
+
+## Status Updates
+
+- The import/export status is displayed at the top of the webpage in real-time using WebSocket.
+
+## Development and Contributions
+
+If you would like to contribute to this project, please fork the project and send a pull request or open an issue to report problems or suggestions.
+
+## License
+
+
+
