@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Blacklist Manager</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>URL Blacklist Manager</h1>
+        <div id="progress-status"></div>
+        <p>Welcome, {{ current_user.email }} | <a href="{{ url_for('logout') }}">Logout</a></p>
+
+        <div id="alert-container"></div>
+
+        <form id="search-form" class="mb-4">
+            <div class="input-group">
+                <input type="text" name="query" class="form-control" placeholder="Search URLs..." value="{{ query }}">
+                <div class="input-group-append">
+                    <button type="submit" class="btn btn-outline-secondary">Search</button>
+                </div>
+            </div>
+        </form>
+
+        <form id="add-url-form" class="mb-4">
+            <div class="form-group">
+                <input type="url" name="url" class="form-control" placeholder="Enter URL" required>
+            </div>
+            <div class="form-group">
+                <input type="text" name="category" class="form-control" placeholder="Enter Category" required>
+            </div>
+            <div class="form-group">
+                <input type="text" name="reason" class="form-control" placeholder="Enter Reason" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Add URL</button>
+        </form>
+
+        <div class="mb-4">
+            <h3>Export/Import</h3>
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('export_data', format='csv') }}" class="btn btn-success">Export CSV</a>
+                <a href="{{ url_for('export_data', format='json') }}" class="btn btn-success">Export JSON</a>
+            </div>
+            <form id="import-form" enctype="multipart/form-data" class="mt-2">
+                <div class="input-group">
+                    <div class="custom-file">
+                        <input type="file" class="custom-file-input" id="importFile" name="file" accept=".csv,.json">
+                        <label class="custom-file-label" for="importFile">Choose file</label>
+                    </div>
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-secondary" type="submit">Import</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>URL</th>
+                    <th>Category</th>
+                    <th>Date Added</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="url-list">
+                {% for url in urls.items %}
+                <tr data-id="{{ url.id }}">
+                    <td>{{ url.url }}</td>
+                    <td>{{ url.category }}</td>
+                    <td>{{ url.date_added }}</td>
+                    <td>{{ url.reason }}</td>
+                    <td>{{ 'Active' if url.status else 'Inactive' }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning toggle-status">Toggle Status</button>
+                        <button class="btn btn-sm btn-danger remove-url">Remove</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <nav>
+            <ul class="pagination">
+                {% for page in urls.iter_pages() %}
+                    {% if page %}
+                        <li class="page-item {% if page == urls.page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('index', page=page, query=query) }}">{{ page }}</a>
+                        </li>
+                    {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        </nav>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            function showAlert(message, type) {
+                $('#alert-container').html(
+                    '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+                    message +
+                    '<button type="button" class="close" data-dismiss="alert" aria-label="Close">' +
+                    '<span aria-hidden="true">&times;</span></button></div>'
+                );
+            }
+
+            $('#add-url-form').submit(function(e) {
+                e.preventDefault();
+                $.post("{{ url_for('add_url') }}", $(this).serialize(), function(data) {
+                    if (data.status === 'success') {
+                        showAlert(data.message, 'success');
+                        location.reload();
+                    } else {
+                        showAlert(data.message, 'danger');
+                    }
+                });
+            });
+
+            $('.toggle-status').click(function() {
+                var id = $(this).closest('tr').data('id');
+                $.get("{{ url_for('toggle_status', id=0) }}".replace('0', id), function(data) {
+                    if (data.status === 'success') {
+                        showAlert(data.message, 'success');
+                        location.reload();
+                    } else {
+                        showAlert(data.message, 'danger');
+                    }
+                });
+            });
+
+            $('.remove-url').click(function() {
+                var id = $(this).closest('tr').data('id');
+                if (confirm('Are you sure you want to remove this URL?')) {
+                    $.get("{{ url_for('remove_url', id=0) }}".replace('0', id), function(data) {
+                        if (data.status === 'success') {
+                            showAlert(data.message, 'success');
+                            location.reload();
+                        } else {
+                            showAlert(data.message, 'danger');
+                        }
+                    });
+                }
+            });
+
+            $('#import-form').submit(function(e) {
+                e.preventDefault();
+                var formData = new FormData(this);
+                $.ajax({
+                    url: "{{ url_for('import_data') }}",
+                    type: 'POST',
+                    data: formData,
+                    success: function(data) {
+                        showAlert(data.message, 'success');
+                        location.reload();
+                    },
+                    error: function(jqXHR) {
+                        showAlert(jqXHR.responseJSON.error, 'danger');
+                    },
+                    cache: false,
+                    contentType: false,
+                    processData: false
+                });
+            });
+
+            // ปรับชื่อไฟล์ที่แสดงเมื่อเลือกไฟล์
+            $('input[type="file"]').change(function(e) {
+                var fileName = e.target.files[0].name;
+                $('.custom-file-label').html(fileName);
+            });
+        });
+
+        $(document).ready(function() {
+                var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+                socket.on('export_progress', function(msg) {
+                    $('#progress-status').html('<div class="alert alert-info">' + msg.status + ' ' + (msg.url || '') + '</div>');
+                });
+
+                socket.on('import_progress', function(msg) {
+                    $('#progress-status').html('<div class="alert alert-info">' + msg.status + ' ' + msg.count + '/' + msg.total + '</div>');
+                });
+            });
+    </script>
+</body>
+</html>
