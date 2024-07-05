@@ -47,7 +47,7 @@ if os.path.exists(credentials_path):
     # check_url_safety("https://codinggun.com/security/jwt/")
     # check_url_safety("http://sms-carte-vitale.fr")
     # check_url_safety("http://livetrack.in/EmployeeMasterImages/qace.jpg")
-    check_url_safety("http://web-whatsapp-kf.top/")
+    check_url_safety("	http://59.99.143.72:46100/Mozi.m")
 
 else:
     print("Credential file not found.")

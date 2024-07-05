@@ -18,7 +18,7 @@
 
         <div id="alert-container"></div>
 
-        <form id="search-form" class="mb-4">
+        <form id="search-form" class="mb-4" action="{{ url_for('search') }}" method="get">
             <div class="input-group">
                 <input type="text" name="query" class="form-control" placeholder="Search URLs..." value="{{ query }}">
                 <div class="input-group-append">
@@ -124,6 +124,8 @@
                     } else {
                         showAlert(data.message, 'danger');
                     }
+                }).fail(function(jqXHR) {
+                    showAlert(jqXHR.responseJSON.message, 'danger');
                 });
             });
 

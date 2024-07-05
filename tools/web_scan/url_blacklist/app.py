@@ -80,6 +80,12 @@ def add_url():
     url = request.form['url']
     category = request.form['category']
     reason = request.form['reason']
+    
+    # ตรวจสอบว่ามี URL นี้อยู่ในฐานข้อมูลแล้วหรือไม่
+    existing_url = URL.query.filter_by(url=url).first()
+    if existing_url:
+        return jsonify({'status': 'error', 'message': 'URL already exists'}), 400
+    
     new_url = URL(url=url, category=category, reason=reason, date_added=db.func.current_date())
     db.session.add(new_url)
     db.session.commit()
@@ -105,7 +111,7 @@ def toggle_status(id):
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'Status updated successfully'})
 
-@app.route('/search')
+@app.route('/search', methods=['GET'])
 @login_required
 def search():
     query = request.args.get('query', '')
@@ -166,7 +172,7 @@ def import_data():
                     continue
                 url = URL(url=row['url'], category=row['category'], 
                           date_added=datetime.strptime(row['date_added'], '%Y-%m-%d').date(), 
-                          reason=row['reason'], status=row['status'] == '1')
+                          reason=row['reason'], status=row['status'] in ['1', 'True'])
                 db.session.add(url)
                 count += 1
                 if count % 100 == 0:

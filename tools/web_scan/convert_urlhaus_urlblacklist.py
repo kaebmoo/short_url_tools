@@ -1,8 +1,9 @@
 import pandas as pd
+import numpy as np
 
 # Define the input and output file paths
-input_file_path = 'tools/web_scan/url_blacklist.csv'
-output_file_path = 'tools/web_scan/url_blacklist.csv'
+input_file_path = '/Users/seal/Documents/GitHub/short_url_tools/tools/web_scan/urlhaus_database.csv'
+output_file_path = '/Users/seal/Documents/GitHub/short_url_tools/tools/web_scan/url_blacklist.csv'
 
 # Read the input CSV file
 df = pd.read_csv(input_file_path)
@@ -13,7 +14,7 @@ df_transformed = pd.DataFrame({
     'category': df['threat'],
     'date_added': pd.to_datetime(df['dateadded']).dt.strftime('%Y-%m-%d'),
     'reason': df['tags'],
-    'status': 1
+    'status': np.where(df['url_status'] == 'online', 1, 0)
 })
 
 # Save the transformed DataFrame to the output CSV file
