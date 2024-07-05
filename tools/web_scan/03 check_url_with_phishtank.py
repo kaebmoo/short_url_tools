@@ -1,7 +1,7 @@
 # เน้นไปที่ phishing 
 import pandas as pd
 
-def check_url_from_csv(url, csv_file='verified_online.csv'):
+def check_url_from_csv(url, csv_file='tools/web_scan/verified_online.csv'):
     try:
         # อ่านไฟล์ CSV
         data = pd.read_csv(csv_file)
@@ -32,6 +32,6 @@ def check_url_from_csv(url, csv_file='verified_online.csv'):
 
     return None
 
-url_to_check = "http://web-whatsapp-kf.top/"
+url_to_check = "http://185.172.128.40/hv.exe"
 check_url_from_csv(url_to_check)
 # check_url_from_csv("http://ustert.net/Alphine/")

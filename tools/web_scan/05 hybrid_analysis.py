@@ -1,3 +1,4 @@
+# tools/web_scan/05 hybrid_analysis.py
 import requests
 import json
 import os
@@ -71,7 +72,7 @@ def parse_hybrid_analysis_response(data):
 
 async def main():
     api_key = HYBRID_ANALYSIS_API_KEY
-    url_to_check = 'http://59.99.143.72:46100/Mozi.m'  # ระบุ URL ที่ต้องการตรวจสอบ
+    url_to_check = 'http://185.172.128.40/hv.exe'  # ระบุ URL ที่ต้องการตรวจสอบ
     # url_to_check = 'https://tinyurl.com/'
     response = await check_hybrid_analysis_url(api_key, url_to_check)
     

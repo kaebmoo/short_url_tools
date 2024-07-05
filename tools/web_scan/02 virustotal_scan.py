@@ -49,7 +49,7 @@ def check_url_with_virustotal(url):
         client.close()
 
 url_to_check = "http://web-whatsapp-kf.top/"
-check_url_with_virustotal("	http://59.99.143.72:46100/Mozi.m")
+check_url_with_virustotal("http://185.172.128.40/hv.exe")
 
 # Scan ID: u-b172742a32107f99c320fd398ae20e596f42a326e8b2e72e7f8e9d1f86bef52b-1720084967
 # Analysis is still in progress. Please check back later.

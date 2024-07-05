@@ -39,4 +39,4 @@ else:
 '''
 # query_urlhaus("http://livetrack.in/EmployeeMasterImages/qace.jpg")
 # query_urlhaus("https://www.ntplc.co.th")
-query_urlhaus("http://59.99.143.72:46100/Mozi.m")
+query_urlhaus("http://185.172.128.40/hv.exe")

@@ -1,3 +1,4 @@
+#tools/web_scan/check_urls.py
 import os
 from dotenv import load_dotenv
 
@@ -44,9 +45,8 @@ webrisk_client = webrisk_v1.WebRiskServiceClient()
 import vt
 
 # กำหนด API Key ของ VirusTotal
-API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
-# สร้าง client สำหรับ VirusTotal API
-vt_client = vt.Client(API_KEY)
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
+
 
 # เน้นไปที่ phishing: phishtank
 import pandas as pd
@@ -116,10 +116,16 @@ async def check_virustotal(url, session):  # Pass the aiohttp session
     # print("VirusTotal: ", end="")
     try:
         # Use the session for the VirusTotal request
+        payload = { "url": url }
+        headers = {
+            "accept": "application/json",
+            "x-apikey": VIRUSTOTAL_API_KEY,
+            "content-type": "application/x-www-form-urlencoded"
+}
         async with session.post(
-            {VIRUSTOTAL_URLS_URL},
-            data={"url": url},
-            headers={"x-apikey": API_KEY},
+            VIRUSTOTAL_URLS_URL,
+            data = payload,
+            headers = headers
         ) as response:
             result = await response.json()
             scan_id = result["data"]["id"]
@@ -128,7 +134,7 @@ async def check_virustotal(url, session):  # Pass the aiohttp session
         for _ in range(10):
             async with session.get(
                 f"{VIRUSTOTAL_ANALYSIS_URL}{scan_id}",
-                headers={"x-apikey": API_KEY},
+                headers={"x-apikey": VIRUSTOTAL_API_KEY},
             ) as response:
                 analysis = await response.json()
                 if analysis["data"]["attributes"]["status"] == "completed":
@@ -151,6 +157,7 @@ async def check_virustotal(url, session):  # Pass the aiohttp session
     except Exception as e:  # Catch more general exceptions
         print(f"VirusTotal Unexpected error: {e}")
         return None
+
 
 # ฟังก์ชันจาก check_url_with_phishtank.py
 # file จาก phishtank
