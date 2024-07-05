@@ -113,7 +113,15 @@ async def check_google_web_risk(url):
     return None
 
 async def check_virustotal(url, session):  # Pass the aiohttp session
-    # print("VirusTotal: ", end="")
+    """Asynchronously checks the reputation of a URL using the VirusTotal API.
+
+    Args:
+        url: The URL to check.
+        session: An aiohttp ClientSession for making asynchronous requests.
+
+    Returns:
+        True if the URL is considered malicious, False if safe, or None if the analysis is inconclusive.
+    """
     try:
         # Use the session for the VirusTotal request
         payload = { "url": url }
@@ -122,24 +130,17 @@ async def check_virustotal(url, session):  # Pass the aiohttp session
             "x-apikey": VIRUSTOTAL_API_KEY,
             "content-type": "application/x-www-form-urlencoded"
 }
-        async with session.post(
-            VIRUSTOTAL_URLS_URL,
-            data = payload,
-            headers = headers
-        ) as response:
-            result = await response.json()
-            scan_id = result["data"]["id"]
+        async with session.post(VIRUSTOTAL_URLS_URL, data = payload, headers = headers) as response:
+            result = await response.json()  # Get the JSON response
+            scan_id = result["data"]["id"]  # Extract the scan ID
 
         # Poll for results (replace 10 with the desired number of retries)
         for _ in range(10):
-            async with session.get(
-                f"{VIRUSTOTAL_ANALYSIS_URL}{scan_id}",
-                headers={"x-apikey": VIRUSTOTAL_API_KEY},
-            ) as response:
+            async with session.get(f"{VIRUSTOTAL_ANALYSIS_URL}{scan_id}", headers={"x-apikey": VIRUSTOTAL_API_KEY}) as response:
                 analysis = await response.json()
                 if analysis["data"]["attributes"]["status"] == "completed":
-                    break
-            await asyncio.sleep(5)  # Wait before retrying
+                    break   # Stop polling if analysis is complete
+            await asyncio.sleep(5)  # Wait for 5 seconds before retrying
 
         # Check analysis results
         if analysis["data"]["attributes"]["status"] == "completed":
