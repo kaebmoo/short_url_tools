@@ -1,4 +1,5 @@
 # tools/web_scan/05_hybrid_analysis.py
+# read data from database
 import os
 import sqlite3
 import aiohttp
