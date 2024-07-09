@@ -5,6 +5,7 @@ from hybrid_analysis import check_hybrid_analysis_url, get_new_urls_from_databas
 from dotenv import load_dotenv
 from models import ScanRecord, urls_session, scan_records_session
 from datetime import datetime
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), 'config.env'))
@@ -13,6 +14,27 @@ app.secret_key = os.urandom(24)
 
 # Global variable to store scan status
 scan_status = {}
+
+def normalize_url(url: str, trailing_slash: bool = False) -> str:
+    """Normalizes a URL by optionally adding or removing trailing slashes.
+
+    Args:
+        url: The URL to normalize.
+        trailing_slash: Whether to ensure a trailing slash (True) or remove it (False).
+
+    Returns:
+        The normalized URL.
+    """
+    # Strip leading and trailing whitespace from the URL
+    url = url.strip()
+    
+    parsed_url = urlparse(url)
+    path = parsed_url.path.rstrip("/")  # Remove all trailing slashes from the path
+    
+    if trailing_slash:
+        path += "/"  # Add a single trailing slash if requested
+
+    return parsed_url._replace(path=path).geturl()
 
 @app.route("/")
 def index():
@@ -57,6 +79,7 @@ async def scan_urls_async(urls):
 async def check_url(url):
     global scan_status
     scan_status[url] = "Scanning"
+    url = normalize_url(url, trailing_slash=False)
     api_key = os.getenv("HYBRID_ANALYSIS_API_KEY")
     response = await check_hybrid_analysis_url(api_key, url)
     if response is not None:
