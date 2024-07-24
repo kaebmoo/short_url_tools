@@ -13,6 +13,7 @@ import json
 from io import StringIO, BytesIO
 import os
 from sqlalchemy.exc import IntegrityError
+from dateutil.parser import parse as parse_date
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -39,6 +40,7 @@ class URL(db.Model):
     category = db.Column(db.String(100), nullable=False)
     date_added = db.Column(db.Date, nullable=False)
     reason = db.Column(db.String(500), nullable=False)
+    source = db.Column(db.String(500), nullable=False)
     status = db.Column(db.Boolean, default=True)
 
 class LoginForm(FlaskForm):
@@ -81,13 +83,14 @@ def add_url():
     url = request.form['url']
     category = request.form['category']
     reason = request.form['reason']
-    
+    source = request.form['source']
+
     # ตรวจสอบว่ามี URL นี้อยู่ในฐานข้อมูลแล้วหรือไม่
     existing_url = URL.query.filter_by(url=url).first()
     if existing_url:
         return jsonify({'status': 'error', 'message': 'URL already exists'}), 400
     
-    new_url = URL(url=url, category=category, reason=reason, date_added=db.func.current_date())
+    new_url = URL(url=url, category=category, reason=reason, source=source, date_added=db.func.current_date())
     db.session.add(new_url)
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'URL added successfully'})
@@ -121,7 +124,8 @@ def search():
     urls = URL.query.filter(
         (URL.url.like(f'%{query}%')) |
         (URL.category.like(f'%{query}%')) |
-        (URL.reason.like(f'%{query}%'))
+        (URL.reason.like(f'%{query}%')) |
+        (URL.source.like(f'%{query}%'))
     ).paginate(page=page, per_page=per_page)
     return render_template('index.html', urls=urls, query=query)
 
@@ -132,9 +136,9 @@ def export_data(format):
     if format == 'csv':
         si = StringIO()
         cw = csv.writer(si)
-        cw.writerow(['url', 'category', 'date_added', 'reason', 'status'])
+        cw.writerow(['url', 'category', 'date_added', 'reason', 'source', 'status'])
         for url in urls:
-            cw.writerow([url.url, url.category, url.date_added, url.reason, url.status])
+            cw.writerow([url.url, url.category, url.date_added, url.reason, url.source, url.status])
             socketio.emit('export_progress', {'status': 'Exporting data...', 'url': url.url})
         output = make_response(si.getvalue())
         output.headers["Content-Disposition"] = "attachment; filename=urls.csv"
@@ -142,7 +146,7 @@ def export_data(format):
         return output
     elif format == 'json':
         data = [{'url': url.url, 'category': url.category, 'date_added': str(url.date_added), 
-                 'reason': url.reason, 'status': url.status} for url in urls]
+                 'reason': url.reason, 'source': url.source, 'status': url.status} for url in urls]
         output = BytesIO(json.dumps(data, indent=2).encode('utf-8'))
         socketio.emit('export_progress', {'status': 'Exporting data...', 'total': len(data)})
         return send_file(output, mimetype='application/json', as_attachment=True, download_name='urls.json')
@@ -172,8 +176,8 @@ def import_data():
                 if existing_url:
                     continue
                 url = URL(url=row['url'], category=row['category'], 
-                          date_added=datetime.strptime(row['date_added'], '%Y-%m-%d').date(), 
-                          reason=row['reason'], status=row['status'] in ['1', 'True'])
+                          date_added=parse_date(row['date_added']).date(), 
+                          reason=row['reason'], source=row['source'], status=row['status'] in ['1', 'True'])
                 db.session.add(url)
                 count += 1
                 if count % 100 == 0:
@@ -188,8 +192,8 @@ def import_data():
                 if existing_url:
                     continue
                 url = URL(url=item['url'], category=item['category'], 
-                          date_added=datetime.strptime(item['date_added'], '%Y-%m-%d').date(), 
-                          reason=item['reason'], status=item['status'])
+                          date_added=parse_date(item['date_added']).date(), 
+                          reason=item['reason'], source=item['source'], status=item['status'])
                 db.session.add(url)
                 count += 1
                 if count % 100 == 0:
@@ -201,6 +205,8 @@ def import_data():
     except IntegrityError:
         db.session.rollback()
         return jsonify({'error': 'An error occurred while importing data'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 

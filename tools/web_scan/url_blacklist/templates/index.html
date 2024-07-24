@@ -38,6 +38,9 @@
             <div class="form-group">
                 <input type="text" name="reason" class="form-control" placeholder="Enter Reason" required>
             </div>
+            <div class="form-group">
+                <input type="text" name="source" class="form-control" placeholder="Enter Source" required>
+            </div>
             <button type="submit" class="btn btn-primary">Add URL</button>
         </form>
 
@@ -67,6 +70,7 @@
                     <th>Category</th>
                     <th>Date Added</th>
                     <th>Reason</th>
+                    <th>Source</th>
                     <th>Status</th>
                     <th>Actions</th>
                 </tr>
@@ -78,6 +82,7 @@
                     <td>{{ url.category }}</td>
                     <td>{{ url.date_added }}</td>
                     <td>{{ url.reason }}</td>
+                    <td>{{ url.source }}</td>
                     <td>{{ 'Active' if url.status else 'Inactive' }}</td>
                     <td>
                         <button class="btn btn-sm btn-warning toggle-status">Toggle Status</button>
@@ -90,10 +95,15 @@
 
         <nav>
             <ul class="pagination">
+                {% if urls.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('search', query=query, page=urls.prev_num) }}">Previous</a>
+                </li>
+                {% endif %}
                 {% for page in urls.iter_pages() %}
                     {% if page %}
                         <li class="page-item {% if page == urls.page %}active{% endif %}">
-                            <a class="page-link" href="{{ url_for('index', page=page, query=query) }}">{{ page }}</a>
+                            <a class="page-link" href="{{ url_for('search', query=query, page=page) }}">{{ page }}</a>
                         </li>
                     {% else %}
                         <li class="page-item disabled">
@@ -101,6 +111,11 @@
                         </li>
                     {% endif %}
                 {% endfor %}
+                {% if urls.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('search', query=query, page=urls.next_num) }}">Next</a>
+                </li>
+                {% endif %}
             </ul>
         </nav>
     </div>
