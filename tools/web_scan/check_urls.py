@@ -229,11 +229,11 @@ async def check_urlhaus(url, session):
     
 
 # ฟังก์ชันในการอัพเดตฐานข้อมูล
-def update_database(url, is_active):
+def update_database(url, status):
     try:
         conn = sqlite3.connect(DATABASE_PATH)
         cursor = conn.cursor()
-        cursor.execute("UPDATE urls SET is_active = ? WHERE target_url = ?", (is_active, url))
+        cursor.execute("UPDATE urls SET status = ? WHERE target_url = ?", (status, url))
         conn.commit()
     except sqlite3.Error as e:
         print(f"UPDATE Database error: {e}")
@@ -323,13 +323,13 @@ async def check_url(url, session):
             
         elif all(result is False for result in results if result is not None):
             print(f"The URL {url} is safe according to {function_name}.")
-            # update_database(url, 1)
+            update_database(url, "SAFE")
         else:
             print(f"No conclusive information for the URL {url} in {function_name}.")
         
     # Update database only once after checking all agents
     if is_dangerous:
-        update_database(url, -1)
+        update_database(url, "DANGER")
 
 # ฟังก์ชันหลักในการรับ URL และตรวจสอบ
 async def main(urls, batch_size=10):

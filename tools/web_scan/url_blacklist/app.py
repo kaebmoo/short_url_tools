@@ -5,8 +5,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField
-from wtforms.validators import DataRequired, Email
+from wtforms import StringField, PasswordField, SubmitField, URLField
+from wtforms.validators import DataRequired, Email, URL as URLValidator
 from flask_socketio import SocketIO, emit
 import csv
 import json
@@ -48,6 +48,13 @@ class LoginForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
 
+class AddURLForm(FlaskForm):
+    url = StringField('URL', validators=[DataRequired(), URLValidator()])
+    category = StringField('Category', validators=[DataRequired()])
+    reason = StringField('Reason', validators=[DataRequired()])
+    source = StringField('Source', validators=[DataRequired()])
+    submit = SubmitField('Add URL')
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -75,11 +82,12 @@ def index():
     page = request.args.get('page', 1, type=int)
     per_page = 10
     urls = URL.query.paginate(page=page, per_page=per_page)
-    return render_template('index.html', urls=urls)
+    form = AddURLForm()
+    return render_template('index.html', urls=urls, form=form)
 
-@app.route('/add', methods=['POST'])
+@app.route('/addd', methods=['POST'])
 @login_required
-def add_url():
+def addd_url():
     url = request.form['url']
     category = request.form['category']
     reason = request.form['reason']
@@ -94,6 +102,28 @@ def add_url():
     db.session.add(new_url)
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'URL added successfully'})
+
+@app.route('/add', methods=['POST'])
+@login_required
+def add_url():
+    form = AddURLForm()
+    if form.validate_on_submit():
+        url = form.url.data
+        category = form.category.data
+        reason = form.reason.data
+        source = form.source.data
+
+        existing_url = URL.query.filter_by(url=url).first()
+        if existing_url:
+            return jsonify({'status': 'error', 'message': 'URL already exists'}), 400
+        
+        new_url = URL(url=url, category=category, reason=reason, source=source, date_added=db.func.current_date())
+        db.session.add(new_url)
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': 'URL added successfully'})
+    else:
+        return jsonify({'status': 'error', 'message': 'Invalid input'}), 400
+
 
 @app.route('/remove/<int:id>')
 @login_required
@@ -127,7 +157,8 @@ def search():
         (URL.reason.like(f'%{query}%')) |
         (URL.source.like(f'%{query}%'))
     ).paginate(page=page, per_page=per_page)
-    return render_template('index.html', urls=urls, query=query)
+    form = AddURLForm()
+    return render_template('index.html', urls=urls, query=query, form=form)
 
 @app.route('/export/<format>', methods=['GET'])
 @login_required

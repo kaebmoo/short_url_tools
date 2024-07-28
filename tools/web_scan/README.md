@@ -212,11 +212,11 @@ async def check_urlhaus(url, session):
 
 #### อัปเดตฐานข้อมูล:
 ```python
-def update_database(url, is_active):
+def update_database(url, status):
     try:
         conn = sqlite3.connect(DATABASE_PATH)
         cursor = conn.cursor()
-        cursor.execute("UPDATE urls SET is_active = ? WHERE target_url = ?", (is_active, url))
+        cursor.execute("UPDATE urls SET status = ? WHERE target_url = ?", (status, url))
         conn.commit()
     except sqlite3.Error as e:
         print(f"UPDATE Database error: {e}")
