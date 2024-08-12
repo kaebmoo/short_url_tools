@@ -28,6 +28,30 @@ from google.api_core.exceptions import PermissionDenied
 from google.cloud import webrisk_v1
 from google.cloud.webrisk_v1 import ThreatType
 
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, func
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base() 
+
+# กำหนด class scan_records ภายในโปรแกรม
+class scan_records(Base):
+    __tablename__ = "scan_records"  # เก็บข้อมูลการ scan 
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())  
+    url = Column(String)
+    status = Column(String)
+    scan_type = Column(String)
+    result = Column(String)
+    submission_type = Column(String)
+    scan_id = Column(String)
+    sha256 = Column(String)
+
+# Database setup
+engine = create_engine(f'sqlite:///{DATABASE_PATH}') 
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+
 # Path to the credentials file
 # ไฟล์ JSON Credential จาก Google Cloud
 credentials_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "api-project-744419703652-f520f5308dff.json")
@@ -313,23 +337,46 @@ async def check_url(url, session):
     results = await asyncio.gather(*tasks.values())  # Gather results
     is_dangerous = False  # Flag to track if the URL is marked dangerous
 
+    db_session = Session()  # Create a database session
+
     for function_name, result in zip(tasks.keys(), results):
-        if any(result is True for result in results):
-            if result is True:
-                print(f"The URL {url} is dangerous according to {function_name}.")
-            elif result is False:
-                print(f"No conclusive information for the URL {url} in {function_name}.")
+        # Determine the result string
+        if result is True:
+            result_str = "DANGER"
             is_dangerous = True
-            
-        elif all(result is False for result in results if result is not None):
+            print(f"The URL {url} is dangerous according to {function_name}.")
+        elif result is False:
+            result_str = "SAFE"
             print(f"The URL {url} is safe according to {function_name}.")
-            update_database(url, "SAFE")
         else:
+            result_str = "INCONCLUSIVE"
             print(f"No conclusive information for the URL {url} in {function_name}.")
-        
-    # Update database only once after checking all agents
+
+        # ตรวจสอบว่ามี record ของ URL นี้และ scan_type นี้อยู่แล้วหรือไม่
+        existing_record = db_session.query(scan_records).filter_by(url=url, scan_type=function_name).first()
+
+        # ถ้ามี record อยู่แล้ว ให้อัพเดตเฉพาะ timestamp และ result
+        if existing_record:
+            existing_record.timestamp = func.now()
+            existing_record.result = result_str 
+        else:  # ถ้ายังไม่มี record ให้สร้างใหม่
+            # Create a new scan record
+            new_record = scan_records(
+                url=url,
+                scan_type=function_name,
+                result=result_str  # You can add more details here if needed
+            )
+            db_session.add(new_record)
+
+    db_session.commit()  # Commit the changes to the database
+    db_session.close()
+
+    # Update the main 'urls' table only once
     if is_dangerous:
         update_database(url, "DANGER")
+    else:  # Update to SAFE only if all results are False or None
+        if all(result is False or result is None for result in results):
+            update_database(url, "SAFE")
 
 # ฟังก์ชันหลักในการรับ URL และตรวจสอบ
 async def main(urls, batch_size=10):

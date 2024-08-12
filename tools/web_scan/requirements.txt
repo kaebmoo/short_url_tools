@@ -1,0 +1,6 @@
+aiohttp
+google-cloud
+google-api-core
+google-cloud-webrisk
+vt-py
+pandas
