@@ -28,7 +28,7 @@ from google.api_core.exceptions import PermissionDenied
 from google.cloud import webrisk_v1
 from google.cloud.webrisk_v1 import ThreatType
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, func
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, func, Enum
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -40,7 +40,7 @@ class scan_records(Base):
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())  
     url = Column(String)
-    status = Column(String)
+    status = Column(Enum('0', 'Dangerous', 'Safe', 'In queue for scanning', '-1', '1', 'No conclusive information', 'No classification'), default='0')
     scan_type = Column(String)
     result = Column(String)
     submission_type = Column(String)

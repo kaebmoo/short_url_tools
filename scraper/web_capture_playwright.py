@@ -20,9 +20,9 @@ async def capture_screenshot(playwright: Playwright, url: str):
 async def main():
     async with async_playwright() as playwright:
         print("1")
-        await capture_screenshot(playwright, 'https://bit.ly/3MnWMV7')
+        await capture_screenshot(playwright, 'https://www.facebook.com')
         print("2")
-        await capture_screenshot(playwright, 'https://www.digitalocean.com/community/tutorials/how-to-add-authentication-to-your-app-with-flask-login')
+        await capture_screenshot(playwright, 'https://raw.githubusercontent.com/hack4impact/flask-base/master/runtime.txt')
 
 url = 'https://bit.ly/3MnWMV7'
 asyncio.run(main())
