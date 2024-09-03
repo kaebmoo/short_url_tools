@@ -2,21 +2,6 @@
 import os
 from dotenv import load_dotenv
 
-# โหลดค่าจาก .env
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), 'config.env'))
-
-# อ่านค่าจาก config.env
-INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", 2))  # ค่า default 1 ถ้าไม่มีในไฟล์
-SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", 2))
-DATABASE_PATH = os.getenv("DATABASE_PATH")
-URLHAUS_API = os.getenv("URLHAUS_API")
-PHISHTANK_CSV = os.getenv("PHISHTANK_CSV")
-VIRUSTOTAL_ANALYSIS_URL = os.getenv("VIRUSTOTAL_ANALYSIS_URL")
-VIRUSTOTAL_URLS_URL = os.getenv("VIRUSTOTAL_URLS_URL")
-
-# ตรวจสอบว่าอ่านค่าได้ถูกต้อง
-print(f"Database Path: {DATABASE_PATH}")
-
 import asyncio
 import sqlite3
 from aiohttp import ClientSession
@@ -31,6 +16,32 @@ from google.cloud.webrisk_v1 import ThreatType
 from sqlalchemy import create_engine, Boolean, Column, Integer, String, DateTime, func, Enum, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base
+
+# VirusTotal
+import vt
+
+# เน้นไปที่ phishing: phishtank
+import pandas as pd
+
+# เน้นไปที่ malware: urlhaus
+import sys
+import requests
+import aiohttp  # Import aiohttp for asynchronous requests
+
+# โหลดค่าจาก .env
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), 'config.env'))
+
+# อ่านค่าจาก config.env
+INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", 2))  # ค่า default 1 ถ้าไม่มีในไฟล์
+SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", 2))
+DATABASE_PATH = os.getenv("DATABASE_PATH")
+URLHAUS_API = os.getenv("URLHAUS_API")
+PHISHTANK_CSV = os.getenv("PHISHTANK_CSV")
+VIRUSTOTAL_ANALYSIS_URL = os.getenv("VIRUSTOTAL_ANALYSIS_URL")
+VIRUSTOTAL_URLS_URL = os.getenv("VIRUSTOTAL_URLS_URL")
+
+# ตรวจสอบว่าอ่านค่าได้ถูกต้อง
+print(f"Database Path: {DATABASE_PATH}")
 
 Base = declarative_base() 
 
@@ -101,20 +112,9 @@ else:
 # Create the client
 webrisk_client = webrisk_v1.WebRiskServiceClient()
 
-# VirusTotal
-import vt
-
 # กำหนด API Key ของ VirusTotal
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 
-
-# เน้นไปที่ phishing: phishtank
-import pandas as pd
-
-# เน้นไปที่ malware: urlhaus
-import sys
-import requests
-import aiohttp  # Import aiohttp for asynchronous requests
 
 # Database Trigger Function
 def create_database_trigger(db_type):
