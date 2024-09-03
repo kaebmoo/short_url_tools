@@ -10,3 +10,4 @@ tools/infobip_sms.py
 tools/twilio_sms.py
 tools/web_scan/verified_online.csv
 tools/web_scan/dev/verified_online.csv
+/.venv
