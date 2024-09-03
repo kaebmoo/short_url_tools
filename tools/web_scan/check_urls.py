@@ -95,7 +95,7 @@ class URLsToCheck(Base):
     url = Column(String)
 
 # Database setup
-engine = create_engine(DATABASE_PATH) 
+engine = create_engine(DATABASE_PATH, echo=False) 
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
@@ -138,8 +138,12 @@ def create_database_trigger(db_type):
 
     elif db_type == "postgresql":
         try:
-            engine = create_engine(DATABASE_PATH)
             with engine.connect() as conn:
+                # ลบ Trigger เดิมถ้ามีอยู่แล้ว
+                conn.execute(text("DROP TRIGGER IF EXISTS check_new_url ON urls;"))
+                conn.execute(text("DROP FUNCTION IF EXISTS insert_url_to_check();"))
+
+                # สร้างฟังก์ชันใหม่
                 conn.execute(text("""
                     CREATE OR REPLACE FUNCTION insert_url_to_check()
                     RETURNS TRIGGER AS $$
@@ -149,15 +153,18 @@ def create_database_trigger(db_type):
                     END;
                     $$ LANGUAGE plpgsql;
                 """))
+
+                # สร้าง Trigger ใหม่
                 conn.execute(text("""
                     CREATE TRIGGER check_new_url
                     AFTER INSERT ON urls
                     FOR EACH ROW
                     EXECUTE FUNCTION insert_url_to_check();
                 """))
-            print("create_database_trigger(), Database trigger created successfully for PostgreSQL.")
+            print("Trigger and function created successfully in PostgreSQL.")
         except Exception as e:
             print(f"create_database_trigger(), Error creating database trigger for PostgreSQL: {e}")
+
 
 
 # Asynchronous Function for Periodic Full Checks
