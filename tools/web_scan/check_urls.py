@@ -28,7 +28,7 @@ from google.api_core.exceptions import PermissionDenied
 from google.cloud import webrisk_v1
 from google.cloud.webrisk_v1 import ThreatType
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, func, Enum
+from sqlalchemy import create_engine, Boolean, Column, Integer, String, DateTime, func, Enum, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -37,18 +37,54 @@ Base = declarative_base()
 # กำหนด class scan_records ภายในโปรแกรม
 class scan_records(Base):
     __tablename__ = "scan_records"  # เก็บข้อมูลการ scan 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())  
     url = Column(String)
-    status = Column(Enum('0', 'Dangerous', 'Safe', 'In queue for scanning', '-1', '1', 'No conclusive information', 'No classification'), default='0')
+    status = Column(
+        Enum(
+            '0', 
+            'Dangerous', 
+            'Safe', 
+            'In queue for scanning', 
+            '-1', 
+            '1', 
+            'No conclusive information', 
+            'No classification', 
+            name='status_enum'  # กำหนดชื่อให้กับ ENUM type
+        ),
+        default='0'
+    )
     scan_type = Column(String)
     result = Column(String)
     submission_type = Column(String)
     scan_id = Column(String)
     sha256 = Column(String)
 
+class URL(Base):
+    __tablename__ = "urls"  # ชื่อ table ใน sqlite
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)                  # primary key
+    key = Column(String, unique=True, index=True)           # shorten 
+    secret_key = Column(String, unique=True, index=True)    # a secret key to the user to manage their shortened URL and see statistics.
+    target_url = Column(String, index=True)                 # to store the URL strings for which your app provides shortened URLs.
+    is_active = Column(Boolean, default=True)               # false is delete
+    clicks = Column(Integer, default=0)     # this field will increase the integer each time someone clicks the shortened link.
+    api_key = Column(String, index=True)  # เพิ่มฟิลด์นี้เพื่อเก็บ API key
+    created_at = Column(DateTime(timezone=True), server_default=func.now())  # เพิ่มฟิลด์วันที่และเวลาในการสร้าง
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())       # เพิ่มฟิลด์วันที่และเวลาในการอัปเดต
+    is_checked = Column(Boolean, default=False, nullable=True)
+    status = Column(String) # เก็บสถานะว่าเป็น url อันตรายหรือไม่ เช่น safe, danger, no info
+    title = Column(String(255)) # title page
+    favicon_url = Column(String(255)) # favicon url
+
+# กำหนด class URLsToCheck สำหรับ urls_to_check table
+class URLsToCheck(Base):
+    __tablename__ = 'urls_to_check'
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)    
+    url = Column(String)
+
 # Database setup
-engine = create_engine(f'sqlite:///{DATABASE_PATH}') 
+engine = create_engine(DATABASE_PATH) 
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
@@ -81,23 +117,48 @@ import requests
 import aiohttp  # Import aiohttp for asynchronous requests
 
 # Database Trigger Function
-def create_database_trigger():
-    try:
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TRIGGER IF NOT EXISTS check_new_url AFTER INSERT ON urls
-            BEGIN
-                INSERT INTO urls_to_check (url) VALUES (NEW.target_url); -- เพิ่ม URL ใหม่เข้าคิว
-            END;
-        """)
-        conn.commit()
-        print("create_database_trigger(), Database trigger created successfully.")
-    except sqlite3.Error as e:
-        print(f"create_database_trigger(), Error creating database trigger: {e}")
-    finally:
-        if conn:
-            conn.close()
+def create_database_trigger(db_type):
+    if db_type == "sqlite":
+        try:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS check_new_url AFTER INSERT ON urls
+                BEGIN
+                    INSERT INTO urls_to_check (url) VALUES (NEW.target_url);
+                END;
+            """)
+            conn.commit()
+            print("create_database_trigger(), Database trigger created successfully for SQLite.")
+        except sqlite3.Error as e:
+            print(f"create_database_trigger(), Error creating database trigger: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    elif db_type == "postgresql":
+        try:
+            engine = create_engine(DATABASE_PATH)
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE OR REPLACE FUNCTION insert_url_to_check()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        INSERT INTO urls_to_check (url) VALUES (NEW.target_url);
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                """))
+                conn.execute(text("""
+                    CREATE TRIGGER check_new_url
+                    AFTER INSERT ON urls
+                    FOR EACH ROW
+                    EXECUTE FUNCTION insert_url_to_check();
+                """))
+            print("create_database_trigger(), Database trigger created successfully for PostgreSQL.")
+        except Exception as e:
+            print(f"create_database_trigger(), Error creating database trigger for PostgreSQL: {e}")
+
 
 # Asynchronous Function for Periodic Full Checks
 async def periodic_full_check(interval_hours=1):
@@ -254,68 +315,58 @@ async def check_urlhaus(url, session):
 
 # ฟังก์ชันในการอัพเดตฐานข้อมูล
 def update_database(url, status):
+    session = Session()
     try:
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE urls SET status = ? WHERE target_url = ?", (status, url))
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"UPDATE Database error: {e}")
+        session.query(URL).filter(URL.target_url == url).update({URL.status: status})
+        session.commit()
     except Exception as e:
+        session.rollback()
         print(f"update_database(), Unexpected error: {e}")
     finally:
-        if conn:
-            conn.close()
+        session.close()
 
 # ฟังก์ชันในการอ่านข้อมูลจากฐานข้อมูล อ่านเฉพาะที่ยังไม่เคย scan
 def get_new_urls_from_database():
-    urls = []
+    session = Session()
     try:
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT target_url FROM urls WHERE is_checked IS NULL OR is_checked = 0 ")
-        urls = [row[0] for row in cursor.fetchall()]
-    except sqlite3.Error as e:
-        print(f"get_new_urls_from_database(), Database error: {e}")
+        urls = session.query(URL.target_url).filter(
+            (URL.is_checked == None) | (URL.is_checked == False)
+        ).all()
+        return [url[0] for url in urls]
     except Exception as e:
         print(f"get_new_urls_from_database(), Unexpected error: {e}")
     finally:
-        if conn:
-            conn.close()
-    return urls
+        session.close()
 
 # ฟังก์ชันในการอ่านข้อมูลจาก urls_to_check table ซึ่งข้อมูลจะเพิ่มเข้ามาเมื่อมีการทำ shorten url ใหม่ 
 def get_urls_from_database():
+    session = Session()
     urls = []
     try:
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT url FROM urls_to_check GROUP BY url")  # อ่าน URL จาก urls_to_check
-        urls = [row[0] for row in cursor.fetchall()]
+        # อ่าน URL จาก urls_to_check โดยการใช้ SQLAlchemy query
+        urls = session.query(URLsToCheck.url).distinct().all()
+        urls = [url[0] for url in urls]
 
         # ลบ URL ที่อ่านแล้วออกจากคิว
-        cursor.execute("DELETE FROM urls_to_check")
-        conn.commit()
-    except sqlite3.Error as e:
+        session.query(URLsToCheck).delete()
+        session.commit()
+    except Exception as e:
+        session.rollback()
         print(f"get_urls_from_database(), Database error: {e}")
     finally:
-        if conn:
-            conn.close()
+        session.close()
     return urls
 
 def mark_urls_as_checked(urls):
+    session = Session()
     try:
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-        cursor.executemany("UPDATE urls SET is_checked = 1 WHERE target_url = ?", [(url,) for url in urls])
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"mark_urls_as_checked(), Database error: {e}")
+        session.query(URL).filter(URL.target_url.in_(urls)).update({URL.is_checked: True}, synchronize_session=False)
+        session.commit()
     except Exception as e:
-        print(f"mark_urls_as_checked(), Unexpected error: {e}")
+        session.rollback()
+        print(f"mark_urls_as_checked(), Database error: {e}")
     finally:
-        if conn:
-            conn.close()
+        session.close()
 
 # ฟังก์ชันหลักในการตรวจสอบ URL
 async def check_url(url, session):
@@ -407,7 +458,10 @@ if __name__ == "__main__":
 
     # เริ่มการตรวจสอบ URL ใหม่และตรวจสอบเป็นระยะ
     # สร้าง Trigger ใน Database สำหรับตรวจสอบ URL ใหม่
-    create_database_trigger()
+    if DATABASE_PATH.startswith("sqlite"):
+        create_database_trigger("sqlite")
+    elif DATABASE_PATH.startswith("postgresql"):
+        create_database_trigger("postgresql")
 
     async def main_task():
         # เริ่มการตรวจสอบ URL ใหม่และตรวจสอบเป็นระยะ

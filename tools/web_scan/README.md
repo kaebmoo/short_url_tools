@@ -769,3 +769,8 @@ if __name__ == "__main__":
 - It utilizes various services for URL checking: Google Web Risk, VirusTotal, PhishTank, and URLhaus.
 - A database trigger is created to add new URLs to the checking queue.
 - Functions are provided for checking new URLs and periodically checking unchecked URLs.
+
+### Run by pm2
+```
+pm2 start check_urls.py --name check_urls --interpreter /home/seal/venv/bin/python
+```
