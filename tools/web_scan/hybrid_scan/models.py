@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Enum, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 Base = declarative_base()
@@ -9,7 +9,7 @@ Base = declarative_base()
 class ScanRecord(Base):
     __tablename__ = 'scan_records'
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     url = Column(String, nullable=False)
     status = Column(Enum('0', 'Dangerous', 'Safe', 'In queue for scanning', '-1', '1', 'No conclusive information', 'No classification'), default='0')
     scan_type = Column(String, nullable=False)
@@ -17,6 +17,8 @@ class ScanRecord(Base):
     submission_type = Column(String, nullable=True)
     scan_id = Column(String, nullable=True)
     sha256 = Column(String, nullable=True)
+    threat_score = Column(Integer, nullable=True)  # New field for threat score
+    verdict = Column(String, nullable=True)  # New field for verdict
 
 def create_db_engine(database_path):
     return create_engine(f'sqlite:///{database_path}', echo=True)

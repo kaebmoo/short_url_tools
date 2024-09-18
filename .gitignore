@@ -11,3 +11,7 @@ tools/twilio_sms.py
 tools/web_scan/verified_online.csv
 tools/web_scan/dev/verified_online.csv
 /.venv
+cookie250.exe
+tools/web_scan/dev/blacklist_url_test_data_49999.csv
+tools/web_scan/dev/url_blacklist.csv
+tools/web_scan/dev/url_blacklist.csv
