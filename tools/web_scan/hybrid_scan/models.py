@@ -1,17 +1,30 @@
+from dotenv import load_dotenv
 from sqlalchemy import Column, Integer, String, DateTime, Enum, create_engine
+from sqlalchemy.dialects.postgresql import ENUM
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timezone
 import os
 
+# Load environment variables
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), 'config.env'))
+
 Base = declarative_base()
+
+# Define PostgreSQL-native ENUM type
+status_enum = ENUM(
+    '0', 'Dangerous', 'Safe', 'In queue for scanning', '-1', '1',
+    'No conclusive information', 'No classification',
+    name='status_enum',  # PostgreSQL enum type name
+    create_type=True  # Ensure the type is created in the database
+)
 
 class ScanRecord(Base):
     __tablename__ = 'scan_records'
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, nullable=False)
     url = Column(String, nullable=False)
-    status = Column(Enum('0', 'Dangerous', 'Safe', 'In queue for scanning', '-1', '1', 'No conclusive information', 'No classification'), default='0')
+    status = Column(status_enum, default='0')
     scan_type = Column(String, nullable=False)
     result = Column(String, nullable=True)
     submission_type = Column(String, nullable=True)
@@ -21,7 +34,10 @@ class ScanRecord(Base):
     verdict = Column(String, nullable=True)  # New field for verdict
 
 def create_db_engine(database_path):
-    return create_engine(f'sqlite:///{database_path}', echo=True)
+    if database_path.startswith("postgresql"):
+        return create_engine(database_path)        
+    
+    return create_engine(f'sqlite:///{database_path}', connect_args={"check_same_thread": False}, echo=True)
 
 def create_db_session(database_path):
     engine = create_db_engine(database_path)

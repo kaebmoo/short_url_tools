@@ -42,6 +42,8 @@ VIRUSTOTAL_URLS_URL = os.getenv("VIRUSTOTAL_URLS_URL")
 
 # ตรวจสอบว่าอ่านค่าได้ถูกต้อง
 print(f"Database Path: {DATABASE_PATH}")
+if not DATABASE_PATH:
+    raise ValueError("DATABASE_PATH is not set in the environment variables.")
 
 Base = declarative_base() 
 
@@ -61,7 +63,8 @@ class scan_records(Base):
             '1', 
             'No conclusive information', 
             'No classification', 
-            name='status_enum'  # กำหนดชื่อให้กับ ENUM type
+            name='status_enum',  # กำหนดชื่อให้กับ ENUM type
+            create_type=False  # กำหนดเป็น False เพื่อไม่สร้างใหม่ซ้ำ
         ),
         default='0'
     )
@@ -323,27 +326,27 @@ async def check_urlhaus(url, session):
 # ฟังก์ชันในการอัพเดตฐานข้อมูล
 def update_database(url, status):
     session = Session()
-    try:
-        session.query(URL).filter(URL.target_url == url).update({URL.status: status})
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"update_database(), Unexpected error: {e}")
-    finally:
-        session.close()
+    with Session() as session:
+        try:
+            session.query(URL).filter(URL.target_url == url).update({URL.status: status})
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"update_database(), Unexpected error: {e}")
+
 
 # ฟังก์ชันในการอ่านข้อมูลจากฐานข้อมูล อ่านเฉพาะที่ยังไม่เคย scan
 def get_new_urls_from_database():
-    session = Session()
-    try:
-        urls = session.query(URL.target_url).filter(
-            (URL.is_checked == None) | (URL.is_checked == False)
-        ).all()
-        return [url[0] for url in urls]
-    except Exception as e:
-        print(f"get_new_urls_from_database(), Unexpected error: {e}")
-    finally:
-        session.close()
+    # session = Session()
+    with Session() as session:  # ใช้ context manager เพื่อสร้าง session
+        try:
+            urls = session.query(URL.target_url).filter(
+                (URL.is_checked == None) | (URL.is_checked == False)
+            ).all()
+            return [url[0] for url in urls]
+        except Exception as e:
+            print(f"get_new_urls_from_database(), Unexpected error: {e}")
+            return []  # Return an empty list if there is an error
 
 # ฟังก์ชันในการอ่านข้อมูลจาก urls_to_check table ซึ่งข้อมูลจะเพิ่มเข้ามาเมื่อมีการทำ shorten url ใหม่ 
 def get_urls_from_database():
@@ -395,39 +398,41 @@ async def check_url(url, session):
     results = await asyncio.gather(*tasks.values())  # Gather results
     is_dangerous = False  # Flag to track if the URL is marked dangerous
 
-    db_session = Session()  # Create a database session
+    with Session() as db_session:  # Proper session handling
+        # db_session = Session()  # Create a database session
 
-    for function_name, result in zip(tasks.keys(), results):
-        # Determine the result string
-        if result is True:
-            result_str = "DANGER"
-            is_dangerous = True
-            print(f"The URL {url} is dangerous according to {function_name}.")
-        elif result is False:
-            result_str = "SAFE"
-            print(f"The URL {url} is safe according to {function_name}.")
-        else:
-            result_str = "INCONCLUSIVE"
-            print(f"No conclusive information for the URL {url} in {function_name}.")
+        for function_name, result in zip(tasks.keys(), results):
+            # Determine the result string
+            if result is True:
+                result_str = "DANGER"
+                is_dangerous = True
+                print(f"The URL {url} is dangerous according to {function_name}.")
+            elif result is False:
+                result_str = "SAFE"
+                print(f"The URL {url} is safe according to {function_name}.")
+            else:
+                result_str = "INCONCLUSIVE"
+                print(f"No conclusive information for the URL {url} in {function_name}.")
 
-        # ตรวจสอบว่ามี record ของ URL นี้และ scan_type นี้อยู่แล้วหรือไม่
-        existing_record = db_session.query(scan_records).filter_by(url=url, scan_type=function_name).first()
+            # ตรวจสอบว่ามี record ของ URL นี้และ scan_type นี้อยู่แล้วหรือไม่
+            with db_session.no_autoflush:  # Disable autoflush temporarily
+                existing_record = db_session.query(scan_records).filter_by(url=url, scan_type=function_name).first()
 
-        # ถ้ามี record อยู่แล้ว ให้อัพเดตเฉพาะ timestamp และ result
-        if existing_record:
-            existing_record.timestamp = func.now()
-            existing_record.result = result_str 
-        else:  # ถ้ายังไม่มี record ให้สร้างใหม่
-            # Create a new scan record
-            new_record = scan_records(
-                url=url,
-                scan_type=function_name,
-                result=result_str  # You can add more details here if needed
-            )
-            db_session.add(new_record)
+            # ถ้ามี record อยู่แล้ว ให้อัพเดตเฉพาะ timestamp และ result
+            if existing_record:
+                existing_record.timestamp = func.now()
+                existing_record.result = result_str 
+            else:  # ถ้ายังไม่มี record ให้สร้างใหม่
+                # Create a new scan record
+                new_record = scan_records(
+                    url=url,
+                    scan_type=function_name,
+                    result=result_str  # You can add more details here if needed
+                )
+                db_session.add(new_record)
 
-    db_session.commit()  # Commit the changes to the database
-    db_session.close()
+        db_session.commit()  # Commit the changes to the database
+        # db_session.close()
 
     # Update the main 'urls' table only once
     if is_dangerous:
@@ -471,20 +476,26 @@ if __name__ == "__main__":
         create_database_trigger("postgresql")
 
     async def main_task():
-        # เริ่มการตรวจสอบ URL ใหม่และตรวจสอบเป็นระยะ
-        async def check_urls_task():
-            while True:
-                urls_to_check = get_urls_from_database()
-                if urls_to_check:
-                    await main(urls_to_check)
-                await asyncio.sleep(SLEEP_SECONDS)  # รอ 2 วินาทีก่อนตรวจสอบรอบถัดไป (ปรับได้ตามต้องการ)
+        try:
+            # เริ่มการตรวจสอบ URL ใหม่และตรวจสอบเป็นระยะ
+            async def check_urls_task():
+                while True:
+                    urls_to_check = get_urls_from_database()
+                    if urls_to_check:
+                        await main(urls_to_check)
+                    await asyncio.sleep(SLEEP_SECONDS)  # รอ 2 วินาทีก่อนตรวจสอบรอบถัดไป (ปรับได้ตามต้องการ)
 
-        loop = asyncio.get_event_loop()
-        loop.create_task(periodic_full_check(interval_hours=INTERVAL_HOURS))  # สร้าง task ตรวจสอบทุก 2 ชั่วโมง
-        loop.create_task(check_urls_task())  # เริ่ม Task ตรวจสอบ URL ใหม่
-        await asyncio.Event().wait()  # รอ event loop ทำงาน
+            loop = asyncio.get_event_loop()
+            loop.create_task(periodic_full_check(interval_hours=INTERVAL_HOURS))  # สร้าง task ตรวจสอบทุก 2 ชั่วโมง
+            loop.create_task(check_urls_task())  # เริ่ม Task ตรวจสอบ URL ใหม่
+            await asyncio.Event().wait()  # รอ event loop ทำงาน
+        except Exception as e:
+            print(f"main_task(), Unexpected error: {e}")
 
-    asyncio.run(main_task())  # เริ่ม event loop และรัน main_task
+    try:
+        asyncio.run(main_task())  # เริ่ม event loop และรัน main_task
+    except KeyboardInterrupt:
+        print("Task terminated by user.")
 
 
 
