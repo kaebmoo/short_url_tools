@@ -4,6 +4,6 @@ google-api-core
 google-cloud-webrisk
 vt-py
 pandas
-psycopg2
+psycopg2-binary
 SQLAlchemy
 python-dotenv

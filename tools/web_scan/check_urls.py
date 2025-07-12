@@ -36,6 +36,7 @@ INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", 2))  # ค่า default 1 ถ�
 SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", 2))
 DATABASE_PATH = os.getenv("DATABASE_PATH")
 URLHAUS_API = os.getenv("URLHAUS_API")
+URLHAUS_AUTH_KEY = os.getenv("URLHAUS_AUTH_KEY")
 PHISHTANK_CSV = os.getenv("PHISHTANK_CSV")
 VIRUSTOTAL_ANALYSIS_URL = os.getenv("VIRUSTOTAL_ANALYSIS_URL")
 VIRUSTOTAL_URLS_URL = os.getenv("VIRUSTOTAL_URLS_URL")
@@ -295,15 +296,44 @@ async def check_phishtank(url):
 # ฟังก์ชันจาก urlhaus_lookup_url.py
 async def check_urlhaus(url, session):
     # print("URLHaus: ", end="")
-    # ตัวอย่างโค้ดที่ใช้ตรวจสอบ URL จาก URLhaus
     try:
+        # ตรวจสอบว่ามี Auth-Key หรือไม่
+        if not URLHAUS_AUTH_KEY:
+            print("URLhaus Auth-Key not configured. Please add URLHAUS_AUTH_KEY to config.env")
+            return None
+        
         # Construct the HTTP request
-        data_urlhaus = {'url' : url}
+        data_urlhaus = {'url': url}
+        headers = {
+            "Auth-Key": URLHAUS_AUTH_KEY
+        }
+        
         # Use aiohttp.ClientSession for asynchronous POST request
-        async with session.post(URLHAUS_API, data=data_urlhaus) as response:
-        # response = requests.post('https://urlhaus-api.abuse.ch/v1/url/', data_urlhaus)
+        async with session.post(URLHAUS_API, data=data_urlhaus, headers=headers) as response:
+            # Check if the response status is OK
+            if response.status != 200:
+                print(f"URLhaus API returned status {response.status}")
+                return None
+            
+            # Check if the response content type is JSON
+            content_type = response.headers.get('content-type', '')
+            if 'application/json' not in content_type:
+                print(f"URLhaus API returned non-JSON content type: {content_type}")
+                return None
+            
             # Parse the response from the API
             json_response = await response.json()
+            
+            # Check if json_response is None or empty
+            if json_response is None:
+                print("URLhaus API returned None response")
+                return None
+            
+            # Check if the required key exists
+            if 'query_status' not in json_response:
+                print("URLhaus API response missing 'query_status' key")
+                return None
+            
             if json_response['query_status'] == 'ok':
                 # print(json.dumps(json_response, indent=4, sort_keys=False))
                 return True
@@ -311,17 +341,24 @@ async def check_urlhaus(url, session):
                 # print("No results")
                 return False
             else:
-                print("URLHAUS Something went wrong")
+                print(f"URLhaus unexpected query_status: {json_response.get('query_status', 'unknown')}")
                 return None
-    except (
-        aiohttp.ClientError,
-        aiohttp.ClientResponseError,
-        json.JSONDecodeError,
-        KeyError,
-    ) as e:
-        print(f"Error checking URLhaus: {e}")
+                
+    except aiohttp.ClientError as e:
+        print(f"URLhaus Client Error: {e}")
         return None
-    
+    except aiohttp.ClientResponseError as e:
+        print(f"URLhaus Response Error: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"URLhaus JSON Decode Error: {e}")
+        return None
+    except KeyError as e:
+        print(f"URLhaus Key Error: {e}")
+        return None
+    except Exception as e:
+        print(f"URLhaus Unexpected Error: {e}")
+        return None    
 
 # ฟังก์ชันในการอัพเดตฐานข้อมูล
 def update_database(url, status):
