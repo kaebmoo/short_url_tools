@@ -13,7 +13,7 @@ from google.api_core.exceptions import PermissionDenied
 from google.cloud import webrisk_v1
 from google.cloud.webrisk_v1 import ThreatType
 
-from sqlalchemy import create_engine, Boolean, Column, Integer, String, DateTime, func, Enum, text
+from sqlalchemy import create_engine, Boolean, Column, Integer, String, Date, DateTime, func, Enum, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -125,7 +125,7 @@ class BlacklistURL(BaseBlacklist):
     url = Column(String, unique=True, index=True)  # unique เพื่อไม่ให้ซ้ำ
     category = Column(String, default="phishing")
     # date_added = Column(DateTime(timezone=True), server_default=func.now())
-    date_added = Column(DateTime(timezone=True), default=func.now())
+    date_added = Column(Date, default=func.current_date())
     reason = Column(String)
     status = Column(Boolean, default=True)  # true = active, false = inactive
     source = Column(String, default="openphish")
