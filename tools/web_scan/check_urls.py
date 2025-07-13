@@ -17,6 +17,7 @@ from sqlalchemy import create_engine, Boolean, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base
 
+
 # VirusTotal
 import vt
 
@@ -25,7 +26,6 @@ import pandas as pd
 
 # เน้นไปที่ malware: urlhaus
 import sys
-import requests
 import aiohttp  # Import aiohttp for asynchronous requests
 
 # โหลดค่าจาก .env
@@ -40,16 +40,37 @@ URLHAUS_AUTH_KEY = os.getenv("URLHAUS_AUTH_KEY")
 PHISHTANK_CSV = os.getenv("PHISHTANK_CSV")
 VIRUSTOTAL_ANALYSIS_URL = os.getenv("VIRUSTOTAL_ANALYSIS_URL")
 VIRUSTOTAL_URLS_URL = os.getenv("VIRUSTOTAL_URLS_URL")
+OPENPHISH_FEED_URL = os.getenv("OPENPHISH_FEED_URL", "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt")
+OPENPHISH_UPDATE_INTERVAL_HOURS = int(os.getenv("OPENPHISH_UPDATE_INTERVAL_HOURS", 12))
+OPENPHISH_REQUEST_TIMEOUT = int(os.getenv("OPENPHISH_REQUEST_TIMEOUT", 30))
+BLACKLIST_DATABASE_PATH = os.getenv("BLACKLIST_DATABASE_PATH")
 
 # ตรวจสอบว่าอ่านค่าได้ถูกต้อง
 print(f"Database Path: {DATABASE_PATH}")
 if not DATABASE_PATH:
     raise ValueError("DATABASE_PATH is not set in the environment variables.")
+# เพิ่มหลังจากการตรวจสอบ DATABASE_PATH
+if not BLACKLIST_DATABASE_PATH:
+    raise ValueError("BLACKLIST_DATABASE_PATH is not set in the environment variables.")
 
-Base = declarative_base() 
+# Database setup
+# Base = declarative_base() 
+# engine = create_engine(DATABASE_PATH, echo=False) 
+# Base.metadata.create_all(engine)
+# Session = sessionmaker(bind=engine)
+
+# Setup สำหรับ Database หลัก (shortener)
+BaseShortener = declarative_base()
+engine_shortener = create_engine(DATABASE_PATH, echo=False)
+SessionShortener = sessionmaker(bind=engine_shortener)
+
+# Setup สำหรับ Database ที่สอง (blacklist)
+BaseBlacklist = declarative_base()
+engine_blacklist = create_engine(BLACKLIST_DATABASE_PATH, echo=False)
+SessionBlacklist = sessionmaker(bind=engine_blacklist)
 
 # กำหนด class scan_records ภายในโปรแกรม
-class scan_records(Base):
+class scan_records(BaseShortener):
     __tablename__ = "scan_records"  # เก็บข้อมูลการ scan 
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())  
@@ -75,7 +96,7 @@ class scan_records(Base):
     scan_id = Column(String)
     sha256 = Column(String)
 
-class URL(Base):
+class URL(BaseShortener):
     __tablename__ = "urls"  # ชื่อ table ใน sqlite
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)                  # primary key
@@ -93,15 +114,25 @@ class URL(Base):
     favicon_url = Column(String(255)) # favicon url
 
 # กำหนด class URLsToCheck สำหรับ urls_to_check table
-class URLsToCheck(Base):
+class URLsToCheck(BaseShortener):
     __tablename__ = 'urls_to_check'
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)    
     url = Column(String)
+class BlacklistURL(BaseBlacklist):
+    __tablename__ = "url"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    url = Column(String, unique=True, index=True)  # unique เพื่อไม่ให้ซ้ำ
+    category = Column(String, default="phishing")
+    # date_added = Column(DateTime(timezone=True), server_default=func.now())
+    date_added = Column(DateTime(timezone=True), default=func.now())
+    reason = Column(String)
+    status = Column(Boolean, default=True)  # true = active, false = inactive
+    source = Column(String, default="openphish")
 
-# Database setup
-engine = create_engine(DATABASE_PATH, echo=False) 
-Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
+# สั่งสร้างตารางในแต่ละ Database
+BaseShortener.metadata.create_all(engine_shortener)
+BaseBlacklist.metadata.create_all(engine_blacklist)
 
 # Path to the credentials file
 # ไฟล์ JSON Credential จาก Google Cloud
@@ -142,7 +173,7 @@ def create_database_trigger(db_type):
 
     elif db_type == "postgresql":
         try:
-            with engine.connect() as conn:
+            with engine_shortener.connect() as conn:
                 # ลบ Trigger เดิมถ้ามีอยู่แล้ว
                 conn.execute(text("DROP TRIGGER IF EXISTS check_new_url ON urls;"))
                 conn.execute(text("DROP FUNCTION IF EXISTS insert_url_to_check();"))
@@ -293,6 +324,103 @@ async def check_phishtank(url):
 
     return None
 
+async def update_openphish_blacklist(session: aiohttp.ClientSession):
+    """
+    Fetches the OpenPhish feed and updates the local blacklist database.
+    """
+    print("Starting OpenPhish blacklist update...")
+    try:
+        # เพิ่ม timeout
+        timeout = aiohttp.ClientTimeout(total=OPENPHISH_REQUEST_TIMEOUT)
+        async with session.get(OPENPHISH_FEED_URL, timeout=timeout) as response:
+            if response.status == 200:
+                text_data = await response.text()
+                
+                # ปรับปรุงการ filter URLs
+                urls_from_feed = {
+                    url.strip() for url in text_data.strip().split('\n') 
+                    if url.strip() and url.strip().startswith(('http://', 'https://'))
+                }
+                
+                if not urls_from_feed:
+                    print("OpenPhish feed is empty. No updates to process.")
+                    return
+                    
+                print(f"Fetched {len(urls_from_feed)} valid URLs from OpenPhish feed.")
+                
+                with SessionBlacklist() as db_session:
+                    try:
+                        # ค้นหา URL ที่มีอยู่แล้วในฐานข้อมูล
+                        existing_urls_query = db_session.query(BlacklistURL.url).filter(
+                            BlacklistURL.url.in_(urls_from_feed)
+                        )
+                        existing_urls = {url[0] for url in existing_urls_query}
+                        new_urls = urls_from_feed - existing_urls
+                        
+                        if new_urls:
+                            new_records = [
+                                BlacklistURL(
+                                    url=url, 
+                                    source='openphish', 
+                                    category='phishing', 
+                                    status=True,
+                                    reason='OpenPhish public feed'
+                                ) 
+                                for url in new_urls
+                            ]
+                            db_session.bulk_save_objects(new_records)
+                            db_session.commit()
+                            print(f"Added {len(new_urls)} new URLs to the blacklist.")
+                        else:
+                            print("No new URLs to add. Blacklist is up-to-date.")
+                            
+                    except Exception as db_error:
+                        db_session.rollback()
+                        print(f"Database error during blacklist update: {db_error}")
+                        
+            else:
+                print(f"Error fetching OpenPhish feed. Status: {response.status}")
+                
+    except aiohttp.ClientError as e:
+        print(f"Network error during OpenPhish update: {e}")
+    except asyncio.TimeoutError:
+        print(f"Timeout error: Request took longer than {OPENPHISH_REQUEST_TIMEOUT} seconds")
+    except Exception as e:
+        print(f"Unexpected error during OpenPhish update: {e}")
+
+async def periodic_openphish_update(interval_hours=None):
+    """
+    Runs the OpenPhish update function periodically.
+    """
+    if interval_hours is None:
+        interval_hours = OPENPHISH_UPDATE_INTERVAL_HOURS
+        
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                await update_openphish_blacklist(session)
+        except Exception as e:
+            print(f"Error in periodic OpenPhish update: {e}")
+            
+        print(f"OpenPhish update finished. Waiting for {interval_hours} hours...")
+        await asyncio.sleep(interval_hours * 3600)
+
+# เพิ่มฟังก์ชันตรวจสอบ blacklist (ยังคงใช้วิธีเดิม)
+async def check_blacklist(url):
+    """Check if URL exists in local blacklist"""
+    try:
+        with SessionBlacklist() as session:
+            existing_record = session.query(BlacklistURL).filter_by(
+                url=url, 
+                status=True
+            ).first()
+            
+            return existing_record is not None
+                
+    except Exception as e:
+        print(f"Error checking blacklist: {e}")
+        return None
+
 # ฟังก์ชันจาก urlhaus_lookup_url.py
 async def check_urlhaus(url, session):
     # print("URLHaus: ", end="")
@@ -362,8 +490,8 @@ async def check_urlhaus(url, session):
 
 # ฟังก์ชันในการอัพเดตฐานข้อมูล
 def update_database(url, status):
-    session = Session()
-    with Session() as session:
+    """Update the status of a URL in the database."""
+    with SessionShortener() as session:
         try:
             session.query(URL).filter(URL.target_url == url).update({URL.status: status})
             session.commit()
@@ -375,7 +503,7 @@ def update_database(url, status):
 # ฟังก์ชันในการอ่านข้อมูลจากฐานข้อมูล อ่านเฉพาะที่ยังไม่เคย scan
 def get_new_urls_from_database():
     # session = Session()
-    with Session() as session:  # ใช้ context manager เพื่อสร้าง session
+    with SessionShortener() as session:  # ใช้ context manager เพื่อสร้าง session
         try:
             urls = session.query(URL.target_url).filter(
                 (URL.is_checked == None) | (URL.is_checked == False)
@@ -387,33 +515,32 @@ def get_new_urls_from_database():
 
 # ฟังก์ชันในการอ่านข้อมูลจาก urls_to_check table ซึ่งข้อมูลจะเพิ่มเข้ามาเมื่อมีการทำ shorten url ใหม่ 
 def get_urls_from_database():
-    session = Session()
-    urls = []
-    try:
-        # อ่าน URL จาก urls_to_check โดยการใช้ SQLAlchemy query
-        urls = session.query(URLsToCheck.url).distinct().all()
-        urls = [url[0] for url in urls]
 
-        # ลบ URL ที่อ่านแล้วออกจากคิว
-        session.query(URLsToCheck).delete()
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"get_urls_from_database(), Database error: {e}")
-    finally:
-        session.close()
-    return urls
+    with SessionShortener() as session:
+        urls = []
+        try:
+            # อ่าน URL จาก urls_to_check โดยการใช้ SQLAlchemy query
+            urls = session.query(URLsToCheck.url).distinct().all()
+            urls = [url[0] for url in urls]
+
+            # ลบ URL ที่อ่านแล้วออกจากคิว
+            session.query(URLsToCheck).delete()
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"get_urls_from_database(), Database error: {e}")
+        return urls
 
 def mark_urls_as_checked(urls):
-    session = Session()
-    try:
-        session.query(URL).filter(URL.target_url.in_(urls)).update({URL.is_checked: True}, synchronize_session=False)
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"mark_urls_as_checked(), Database error: {e}")
-    finally:
-        session.close()
+    with SessionShortener() as session:
+        try:
+            session.query(URL).filter(URL.target_url.in_(urls)).update({URL.is_checked: True}, synchronize_session=False)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"mark_urls_as_checked(), Database error: {e}")
+        finally:
+            session.close()
 
 # ฟังก์ชันหลักในการตรวจสอบ URL
 async def check_url(url, session):
@@ -427,6 +554,7 @@ async def check_url(url, session):
     results = await asyncio.gather(*tasks)
     '''
     tasks = {
+        "Blacklist": check_blacklist(url),
         "Google Web Risk": check_google_web_risk(url),
         "VirusTotal": check_virustotal(url, session),
         "Phishtank": check_phishtank(url),
@@ -435,7 +563,7 @@ async def check_url(url, session):
     results = await asyncio.gather(*tasks.values())  # Gather results
     is_dangerous = False  # Flag to track if the URL is marked dangerous
 
-    with Session() as db_session:  # Proper session handling
+    with SessionShortener() as db_session:  # Proper session handling
         # db_session = Session()  # Create a database session
 
         for function_name, result in zip(tasks.keys(), results):
@@ -514,17 +642,31 @@ if __name__ == "__main__":
 
     async def main_task():
         try:
+            print("Performing initial blacklist update...")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    await update_openphish_blacklist(session)
+            except Exception as e:
+                print(f"Failed to perform initial blacklist update: {e}")
+                print("Continuing with URL checking tasks...")
+
             # เริ่มการตรวจสอบ URL ใหม่และตรวจสอบเป็นระยะ
             async def check_urls_task():
                 while True:
-                    urls_to_check = get_urls_from_database()
-                    if urls_to_check:
-                        await main(urls_to_check)
+                    try:
+                        urls_to_check = get_urls_from_database()
+                        if urls_to_check:
+                            await main(urls_to_check)
+                    except Exception as e:
+                        print(f"Error in check_urls_task: {e}")
                     await asyncio.sleep(SLEEP_SECONDS)  # รอ 2 วินาทีก่อนตรวจสอบรอบถัดไป (ปรับได้ตามต้องการ)
 
             loop = asyncio.get_event_loop()
+
             loop.create_task(periodic_full_check(interval_hours=INTERVAL_HOURS))  # สร้าง task ตรวจสอบทุก 2 ชั่วโมง
             loop.create_task(check_urls_task())  # เริ่ม Task ตรวจสอบ URL ใหม่
+            loop.create_task(periodic_openphish_update(interval_hours=12))
+
             await asyncio.Event().wait()  # รอ event loop ทำงาน
         except Exception as e:
             print(f"main_task(), Unexpected error: {e}")
